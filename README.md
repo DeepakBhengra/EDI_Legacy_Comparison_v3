@@ -1,20 +1,8 @@
-# GDL vs Legacy Segment Comparison
+# GDL vs Legacy X12 Comparison
 
-Python tool that compares a GDL EDI 846 dump with a Legacy (Impulse) 846 dump and writes an Excel report.
+Python tool that compares one GDL EDI X12 file with one Legacy (Impulse / ECC) X12 file and writes an Excel report.
 
-## File structure
-
-Each file has this shape:
-
-1. `ISA` — interchange header (once)
-2. `GS` — functional group header (once)
-3. One or more `ST`–`SE` transaction blocks:
-   - `ST` → `BIA` → optional `DTM` → `N1` / `N2` / `N3` / `N4` → `PER`
-   - repeating `LIN` + `QTY` pairs
-   - `CTT` → `SE`
-4. `GE` and `IEA` trailers (once each)
-
-`LIN`/`QTY` order inside a block may differ between GDL and Legacy.
+Each input can come from a **local file** or from the **SFTP server**. Comparison rules are unchanged: ISA/GS once, `ST`–`SE` blocks paired by the `N1` warehouse line, and `LIN`/`QTY` matched by LIN content inside that block.
 
 ## Matching rules
 
@@ -28,103 +16,80 @@ Each file has this shape:
 | GDL `LIN` is not in that Legacy block | GDL `LIN`/`QTY` | blank | `Missing in Impulse` | red |
 | Legacy `LIN`/`QTY` has no GDL pair in that block | blank | Legacy `LIN`/`QTY` | `Missing in GDL` | red |
 
-`ST`–`SE` blocks are paired by the `N1` warehouse line, not by `ST` control number. That keeps the same warehouse together when GDL inserts extra blocks without `N1`. Unpaired GDL blocks are `Missing in Impulse`. Unpaired Legacy blocks are `Missing in GDL`.
-
-`LIN` matching stays inside one `ST`–`SE` block. A later `LIN` in the same block still counts as `MATCH`.
-
 ## How to run
-
-### 1. Prerequisites
-
-- Python 3.10 or later
-- VS Code (optional, but recommended)
-- This project folder opened as the workspace root (the folder that contains `compare_segments.py`)
-
-Check Python:
-
-```bash
-python --version
-```
-
-On some Windows setups use `py -3 --version` instead.
-
-### 2. Create and activate a virtual environment
-
-macOS / Linux:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-```
-
-Windows PowerShell:
-
-```powershell
-py -3 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-```
-
-If PowerShell blocks activation, run this once, then activate again:
-
-```powershell
-Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-```
-
-In VS Code, press `Ctrl+Shift+P` → **Python: Select Interpreter** → choose `.venv`.
-
-### 3. Install packages
-
-Install into the same Python that will run the script:
-
-```bash
 python -m pip install -r requirements.txt
 ```
 
-Confirm the Excel library is visible:
+### Interactive: pick local or SFTP for each file
 
 ```bash
-python -c "import xlsxwriter; print('ok', xlsxwriter.__version__)"
-```
-
-If that fails, VS Code is using a different Python. Select the `.venv` interpreter and run `python -m pip install -r requirements.txt` again.
-
-### 4. Run the comparison
-
-From the project root:
-
-```bash
+export SFTP_PASSWORD='your-password'   # only needed if a file comes from SFTP
 python compare_segments.py
 ```
 
-That reads:
+You will be asked:
 
-- `data/GDL_Segment.txt`
-- `data/Legacy_Segment.txt`
+1. **GDL input source** — local file or SFTP server
+2. **Legacy input source** — local file or SFTP server (can differ from GDL)
+3. If SFTP is used: country (`MX` / `SG`) and report (`INV` / `POS`)
+4. The GDL file, from `data/` or from `/GDL/{country}/{report}`
+5. The Legacy file, from `data/` or from `/ECC_IMPULSE/{country}/{report}`
 
-and writes a **new** Excel file under `reports/` with a timestamp in the name, for example:
+SFTP file lists show the detected format. Only **X12** files can be selected.
 
-`reports/segment_comparison_20260930_091300.xlsx`
+### Non-interactive examples
 
-The terminal prints the exact output path when it finishes.
-
-### 5. Use your own files
+Both files local:
 
 ```bash
-python compare_segments.py --gdl path/to/gdl.txt --legacy path/to/legacy.txt -o reports/segment_comparison.xlsx
+python compare_segments.py --gdl path/to/gdl.txt --legacy path/to/legacy.txt
+python compare_segments.py --local
 ```
 
-A timestamp is still added, so `-o reports/segment_comparison.xlsx` becomes something like `reports/segment_comparison_20260930_091300.xlsx`.
+Both files from SFTP:
 
-### 6. Open the report
+```bash
+python compare_segments.py --source sftp --country MX --report INV \
+  --gdl-file APPLE_846.txt --legacy-file APPLE_846.txt
+```
 
-Open the newest `.xlsx` file in `reports/`. It has two sheets:
+Mixed (GDL local, Legacy SFTP):
 
-- **Comparison** — `GDL Segment`, `Legacy Segment`, `status`
-- **Summary** — MATCH / MISMATCH / missing counts and ST–SE block counts
+```bash
+python compare_segments.py --gdl path/to/gdl.txt --legacy-source sftp \
+  --country MX --report INV --legacy-file APPLE_846.txt
+```
 
-Do not reuse an older workbook from a previous run.
+Compare every matching X12 pair on SFTP (older bulk audit):
 
-### Optional tests
+```bash
+python compare_segments.py --all --country MX --report INV
+```
+
+Optional overrides: `SFTP_HOST`, `SFTP_PORT`, `SFTP_USER`, `SFTP_PASSWORD`.
+
+## Excel report
+
+A two-file comparison writes four sheets, in this order:
+
+1. **Comparison** — `GDL Segment`, `Legacy Segment`, `status`
+2. **Summary** — MATCH / MISMATCH / missing counts and ST–SE block counts
+3. **GDL File** — original GDL segments used for the comparison
+4. **Legacy File** — original Legacy segments used for the comparison
+
+`--all` still writes **File Audit**, **Summary**, and one comparison sheet per vendor.
+
+A timestamp is added to the output name so older workbooks are not overwritten.
+
+## X12 formatting
+
+Remote files are often wrapped. Before comparison each X12 interchange is split on the trading-partner segment terminator (Apple `?`, Cisco newline, Dell `¦`, and so on). If the vendor is not in the built-in table, separators are read from the `ISA` envelope.
+
+## Optional tests
 
 ```bash
 python -m pytest -q

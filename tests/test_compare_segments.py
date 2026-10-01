@@ -292,11 +292,21 @@ def test_timestamped_output_path_inserts_local_timestamp() -> None:
 
 def test_excel_report_headers_status_and_fill_colors(tmp_path: Path) -> None:
     openpyxl = pytest.importorskip("openpyxl")
-    result = compare_segments(["ISA~GDL", "GS~SAME"], ["ISA~LEG", "GS~SAME"])
+    gdl_lines = ["ISA~GDL", "GS~SAME"]
+    legacy_lines = ["ISA~LEG", "GS~SAME"]
+    result = compare_segments(gdl_lines, legacy_lines)
     output = tmp_path / "report.xlsx"
-    write_excel_report(result, output)
+    write_excel_report(
+        result,
+        output,
+        gdl_lines=gdl_lines,
+        legacy_lines=legacy_lines,
+        gdl_source="local/gdl.txt",
+        legacy_source="local/legacy.txt",
+    )
 
     workbook = openpyxl.load_workbook(output)
+    assert workbook.sheetnames == ["Comparison", "Summary", "GDL File", "Legacy File"]
     sheet = workbook["Comparison"]
     assert [cell.value for cell in sheet[1]] == ["GDL Segment", "Legacy Segment", "status"]
     assert [sheet.cell(row=2, column=j).value for j in range(1, 4)] == [
@@ -319,6 +329,13 @@ def test_excel_report_headers_status_and_fill_colors(tmp_path: Path) -> None:
     assert metrics["MATCH"] == 1
     assert metrics["MISMATCH"] == 1
 
+    gdl_sheet = workbook["GDL File"]
+    assert gdl_sheet.cell(row=1, column=2).value == "local/gdl.txt"
+    assert [gdl_sheet.cell(row=i, column=2).value for i in range(3, 5)] == gdl_lines
+    legacy_sheet = workbook["Legacy File"]
+    assert legacy_sheet.cell(row=1, column=2).value == "local/legacy.txt"
+    assert [legacy_sheet.cell(row=i, column=2).value for i in range(3, 5)] == legacy_lines
+
 
 def test_main_writes_a_timestamped_excel_file(tmp_path: Path) -> None:
     from compare_segments import main
@@ -335,3 +352,41 @@ def test_main_writes_a_timestamped_excel_file(tmp_path: Path) -> None:
     assert len(reports) == 1
     assert reports[0].name.startswith("report_")
     assert not output.exists()
+    openpyxl = pytest.importorskip("openpyxl")
+    workbook = openpyxl.load_workbook(reports[0])
+    assert workbook.sheetnames == ["Comparison", "Summary", "GDL File", "Legacy File"]
+    assert workbook["GDL File"].cell(row=3, column=2).value == "ISA~A"
+    assert workbook["Legacy File"].cell(row=3, column=2).value == "ISA~A"
+
+
+def test_prompt_local_file_picks_listed_path_and_custom_path(tmp_path: Path) -> None:
+    from compare_segments import prompt_local_file
+
+    first = tmp_path / "aaa.txt"
+    second = tmp_path / "bbb.txt"
+    custom = tmp_path / "custom.txt"
+    first.write_text("ISA~A\n", encoding="utf-8")
+    second.write_text("ISA~B\n", encoding="utf-8")
+    custom.write_text("ISA~C\n", encoding="utf-8")
+
+    picked = prompt_local_file("GDL", tmp_path, input_func=lambda _prompt: "1")
+    assert picked == first
+
+    answers = iter(["3", str(custom)])
+    picked_custom = prompt_local_file(
+        "Legacy", tmp_path, input_func=lambda _prompt: next(answers)
+    )
+    assert picked_custom == custom
+
+
+def test_resolve_side_source_uses_local_path_and_sftp_filename() -> None:
+    from compare_segments import parse_args, resolve_side_source
+
+    local_args = parse_args(["--gdl", "gdl.txt", "--legacy-file", "APPLE_846.txt"])
+    assert resolve_side_source(local_args, "gdl") == "local"
+    assert resolve_side_source(local_args, "legacy") == "sftp"
+
+    prompted = parse_args([])
+    answers = iter(["2", "1"])
+    assert resolve_side_source(prompted, "gdl", input_func=lambda _prompt: next(answers)) == "sftp"
+    assert resolve_side_source(prompted, "legacy", input_func=lambda _prompt: next(answers)) == "local"
