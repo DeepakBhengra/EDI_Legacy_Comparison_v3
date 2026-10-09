@@ -4,6 +4,19 @@ Python tool that compares one GDL EDI X12 file with one Legacy (Impulse / ECC) X
 
 Each input can come from a **local file** or from the **SFTP server**. Comparison rules are unchanged: ISA/GS once, `ST`–`SE` blocks paired by the `N1` warehouse line, and `LIN`/`QTY` matched by LIN content inside that block.
 
+## Project layout
+
+| File | Role |
+| --- | --- |
+| `compare_segments.py` | CLI: local vs SFTP source selection, then run the 846 compare |
+| `edi846_compare.py` | GDL vs Legacy X12 846 comparison (N1 blocks, LIN/QTY) |
+| `x12_format.py` | X12 format detection, vendor delimiters, segment splitting |
+| `sftp_client.py` | SFTP login, folder listing, X12 download |
+| `excel_report.py` | Comparison / Summary / GDL File / Legacy File workbooks |
+| `cli_prompts.py` | Interactive MX/SG, INV/POS, and file menus |
+
+`python compare_segments.py` is still the command to run.
+
 ## Matching rules
 
 | Situation | GDL Segment | Legacy Segment | status | Row color |
@@ -18,10 +31,44 @@ Each input can come from a **local file** or from the **SFTP server**. Compariso
 
 ## How to run
 
+macOS / Linux:
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
+```
+
+Windows PowerShell:
+
+```powershell
+py -3 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+```
+
+In VS Code / Cursor, press `Ctrl+Shift+P` → **Python: Select Interpreter** → choose `.venv`.
+
+### If you see `paramiko is required for SFTP`
+
+Packages were installed with a different `pip` than the Python that runs the script. In the **same** terminal that shows `(.venv)`, run:
+
+```powershell
+python -c "import sys; print(sys.executable)"
+python -m pip show paramiko
+python -m pip install -r requirements.txt
+python -c "import paramiko; print('ok', paramiko.__version__)"
+python compare_segments.py
+```
+
+Use `python -m pip install ...`, not `pip install ...`.
+
+If `pip show paramiko` is still empty, the editor is using another interpreter. Select `.venv\Scripts\python.exe` (Windows) or `.venv/bin/python` (macOS / Linux), then install again.
+
+`paramiko` is only required for SFTP. Local files work without it:
+
+```powershell
+python compare_segments.py --local
 ```
 
 ### Interactive: pick local or SFTP for each file
