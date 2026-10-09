@@ -1,23 +1,28 @@
-# GDL vs Legacy X12 Comparison
+# GDL vs Legacy EDI Comparison
 
-Python tool that compares one GDL EDI X12 file with one Legacy (Impulse / ECC) X12 file and writes an Excel report.
+Python tool that compares one GDL EDI file with one Legacy (Impulse / ECC) file and writes an Excel report. It supports:
 
-Each input can come from a **local file** or from the **SFTP server**. Comparison rules are unchanged: ISA/GS once, `ST`–`SE` blocks paired by the `N1` warehouse line, and `LIN`/`QTY` matched by LIN content inside that block.
+- **X12 846** inventory (ISA/GS, ST–SE warehouse blocks, LIN/QTY)
+- **EDIFACT INVRPT** inventory (UNB/UNZ, UNH–UNT, LIN/LOC/QTY)
+
+Each input can come from a **local file** or from the **SFTP server**.
 
 ## Project layout
 
 | File | Role |
 | --- | --- |
-| `compare_segments.py` | CLI: local vs SFTP source selection, then run the 846 compare |
+| `compare_segments.py` | CLI: local vs SFTP source selection, then run the compare |
 | `edi846_compare.py` | GDL vs Legacy X12 846 comparison (N1 blocks, LIN/QTY) |
+| `edifact_invrpt_compare.py` | GDL vs Legacy EDIFACT INVRPT comparison (LOC+SKU items, RFF/QTY) |
 | `x12_format.py` | X12 format detection, vendor delimiters, segment splitting |
-| `sftp_client.py` | SFTP login, folder listing, X12 download |
+| `edifact_format.py` | EDIFACT UNA delimiters and segment splitting |
+| `sftp_client.py` | SFTP login, folder listing, X12/EDIFACT download |
 | `excel_report.py` | Comparison / Summary / GDL File / Legacy File workbooks |
 | `cli_prompts.py` | Interactive MX/SG, INV/POS, and file menus |
 
-`python compare_segments.py` is still the command to run.
+`python compare_segments.py` is still the command to run. Format is detected from the file head (`ISA` vs `UNA`/`UNB`/`UNH`). Mixed X12 vs EDIFACT pairs are not compared.
 
-## Matching rules
+## X12 846 matching rules
 
 | Situation | GDL Segment | Legacy Segment | status | Row color |
 | --- | --- | --- | --- | --- |
@@ -28,6 +33,27 @@ Each input can come from a **local file** or from the **SFTP server**. Compariso
 | GDL `LIN` exists in the same warehouse block before `CTT` | GDL `LIN`/`QTY` | matching Legacy `LIN`/`QTY` | `MATCH` | none |
 | GDL `LIN` is not in that Legacy block | GDL `LIN`/`QTY` | blank | `Missing in Impulse` | red |
 | Legacy `LIN`/`QTY` has no GDL pair in that block | blank | Legacy `LIN`/`QTY` | `Missing in GDL` | red |
+
+`ST`–`SE` blocks with an `N1` warehouse line are paired by that `N1`. `LIN`/`QTY` pairs are matched by LIN content inside the paired block, even when the order differs.
+
+## EDIFACT INVRPT matching rules
+
+An INVRPT interchange is split into the UNB/UNZ envelope, one or more UNH–UNT messages, and LIN item loops (product + location + quantities).
+
+| Situation | GDL Segment | Legacy Segment | status | Row color |
+| --- | --- | --- | --- | --- |
+| `UNB` / `UNZ` / `UNH` / `BGM` / `UNT` contents are equal | line | line | `MATCH` | none |
+| Those envelope or header lines differ | line | line | `MISMATCH` | orange |
+| Header `NAD` / `DTM` matched by qualifier (`DS`, `MF`, `91`, …) | line | line | `MATCH` or `MISMATCH` | none / orange |
+| Item found by location (`LOC`) + product id (`LIN` C212) | GDL item segments | matching Legacy item | see below | |
+| Same SKU at the same location; `LIN` line numbers differ | `LIN+2++SKU:MF` | `LIN+1++SKU:MF` | `MATCH` | none |
+| `QTY` (with its `RFF` group) amounts differ | GDL `QTY` | Legacy `QTY` | `MISMATCH` | orange |
+| GDL item has no Legacy pair at that location+SKU | GDL `LIN`/`LOC`/`QTY` | blank | `Missing in Impulse` | red |
+| Legacy item has no GDL pair | blank | Legacy `LIN`/`LOC`/`QTY` | `Missing in GDL` | red |
+
+Item order does not matter. `QTY` rows stay attached to the preceding `RFF` (for example `RFF+AEN:1` / on-hand `QTY+17`, `RFF+AEN:2` / reserved `QTY+16`). Optional `PIA`, `IMD`, line-level `DTM`, `CUX`, and `UNS` are compared when present.
+
+Sample INVRPT dump: `data/EDIFACT_INVRPT_GDL.txt`.
 
 ## How to run
 
@@ -86,15 +112,16 @@ You will be asked:
 4. The GDL file, from `data/` or from `/GDL/{country}/{report}`
 5. The Legacy file, from `data/` or from `/ECC_IMPULSE/{country}/{report}`
 
-SFTP file lists show the detected format. Only **X12** files can be selected.
+SFTP file lists show the detected format. **X12** and **EDIFACT** files can be selected. A pair is compared only when both sides are the same supported format.
 
 ### Non-interactive examples
 
-Both files local:
+Both files local (X12 samples, or any two paths):
 
 ```bash
 python compare_segments.py --gdl path/to/gdl.txt --legacy path/to/legacy.txt
 python compare_segments.py --local
+python compare_segments.py --gdl data/EDIFACT_INVRPT_GDL.txt --legacy data/EDIFACT_INVRPT_GDL.txt
 ```
 
 Both files from SFTP:
@@ -111,7 +138,7 @@ python compare_segments.py --gdl path/to/gdl.txt --legacy-source sftp \
   --country MX --report INV --legacy-file APPLE_846.txt
 ```
 
-Compare every matching X12 pair on SFTP (older bulk audit):
+Compare every matching X12 or EDIFACT pair on SFTP (older bulk audit):
 
 ```bash
 python compare_segments.py --all --country MX --report INV
@@ -124,17 +151,19 @@ Optional overrides: `SFTP_HOST`, `SFTP_PORT`, `SFTP_USER`, `SFTP_PASSWORD`.
 A two-file comparison writes four sheets, in this order:
 
 1. **Comparison** — `GDL Segment`, `Legacy Segment`, `status`
-2. **Summary** — MATCH / MISMATCH / missing counts and ST–SE block counts
+2. **Summary** — MATCH / MISMATCH / missing counts and block / item counts
 3. **GDL File** — original GDL segments used for the comparison
 4. **Legacy File** — original Legacy segments used for the comparison
 
-`--all` still writes **File Audit**, **Summary**, and one comparison sheet per vendor.
+`--all` still writes **File Audit**, **Summary**, and one comparison sheet per vendor. Pairs that are mixed format or unsupported are listed as skipped on File Audit.
 
 A timestamp is added to the output name so older workbooks are not overwritten.
 
-## X12 formatting
+## Formatting
 
-Remote files are often wrapped. Before comparison each X12 interchange is split on the trading-partner segment terminator (Apple `?`, Cisco newline, Dell `¦`, and so on). If the vendor is not in the built-in table, separators are read from the `ISA` envelope.
+Remote X12 files are often wrapped. Before comparison each X12 interchange is split on the trading-partner segment terminator (Apple `?`, Cisco newline, Dell `¦`, and so on). If the vendor is not in the built-in table, separators are read from the `ISA` envelope.
+
+EDIFACT files are split on the UNA segment terminator (`'` by default) when the interchange is wrapped, or kept as one segment per line for newline dumps such as `data/EDIFACT_INVRPT_GDL.txt`.
 
 ## Optional tests
 

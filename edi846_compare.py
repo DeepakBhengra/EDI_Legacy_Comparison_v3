@@ -313,6 +313,47 @@ def _document_line_count(document: EdiDocument) -> int:
     return count
 
 
+def compare_loaded_segments(
+    gdl_lines: Iterable[str],
+    legacy_lines: Iterable[str],
+) -> ComparisonResult:
+    """Dispatch GDL vs Legacy comparison for X12 846 or EDIFACT INVRPT."""
+    from x12_format import detect_edi_format
+
+    gdl_list = list(gdl_lines)
+    legacy_list = list(legacy_lines)
+    gdl_fmt = detect_edi_format(next((line for line in gdl_list if line.strip()), ""))
+    legacy_fmt = detect_edi_format(next((line for line in legacy_list if line.strip()), ""))
+    if gdl_fmt == "EDIFACT" and legacy_fmt == "EDIFACT":
+        from edifact_invrpt_compare import compare_edifact_invrpt
+
+        return compare_edifact_invrpt(gdl_list, legacy_list)
+    if gdl_fmt == "X12" and legacy_fmt == "X12":
+        return compare_segments(gdl_list, legacy_list)
+    if gdl_fmt in {"EMPTY FILE", "UNKNOWN / UNSUPPORTED"} and legacy_fmt in {
+        "EMPTY FILE",
+        "UNKNOWN / UNSUPPORTED",
+        "X12",
+    }:
+        return compare_segments(gdl_list, legacy_list)
+    if gdl_fmt == "X12" and legacy_fmt in {"EMPTY FILE", "UNKNOWN / UNSUPPORTED"}:
+        return compare_segments(gdl_list, legacy_list)
+    if gdl_fmt != legacy_fmt:
+        return ComparisonResult(
+            rows=[
+                ReportRow(
+                    gdl_segment=f"Format: {gdl_fmt}",
+                    legacy_segment=f"Format: {legacy_fmt}",
+                    status=STATUS_MISMATCH,
+                    fill=FILL_ORANGE,
+                )
+            ],
+            gdl_line_count=len(gdl_list),
+            legacy_line_count=len(legacy_list),
+        )
+    return compare_segments(gdl_list, legacy_list)
+
+
 def compare_segments(gdl_lines: Iterable[str], legacy_lines: Iterable[str]) -> ComparisonResult:
     """Compare two 846 files: ISA/GS once, then each ST-SE block, then GE/IEA.
 

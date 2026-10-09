@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""CLI for GDL vs Legacy X12 846 comparison.
+"""CLI for GDL vs Legacy X12 846 and EDIFACT INVRPT comparison.
 
-Comparison rules live in edi846_compare.py, X12 splitting in x12_format.py,
+X12 846 rules live in edi846_compare.py, EDIFACT INVRPT in
+edifact_invrpt_compare.py, splitting in x12_format.py / edifact_format.py,
 SFTP in sftp_client.py, and Excel output in excel_report.py.
 """
 
@@ -26,6 +27,7 @@ from edi846_compare import (
     STATUS_MISSING_IN_GDL,
     STATUS_MISSING_IN_IMPULSE,
     ComparisonResult,
+    compare_loaded_segments,
     compare_segments,
     parse_edi_document,
 )
@@ -58,9 +60,9 @@ from x12_format import (
 def print_comparison_stats(result: ComparisonResult, report_path: Path) -> None:
     print()
     print("Comparison complete")
-    print(f"  GDL ST-SE blocks:          {result.gdl_block_count:,}")
-    print(f"  Legacy ST-SE blocks:       {result.legacy_block_count:,}")
-    print(f"  Paired warehouse blocks:   {result.paired_block_count:,}")
+    print(f"  GDL blocks / items:        {result.gdl_block_count:,}")
+    print(f"  Legacy blocks / items:     {result.legacy_block_count:,}")
+    print(f"  Paired blocks / items:     {result.paired_block_count:,}")
     print(f"  MATCH:                     {result.matches:,}")
     print(f"  MISMATCH:                  {result.mismatches:,}")
     print(f"  Missing in Impulse:        {result.missing_in_impulse:,}")
@@ -77,7 +79,7 @@ def run_two_file_comparison(
     legacy_source: str,
 ) -> int:
     print(f"Comparing {len(gdl_lines):,} GDL lines with {len(legacy_lines):,} Legacy lines...")
-    result = compare_segments(gdl_lines, legacy_lines)
+    result = compare_loaded_segments(gdl_lines, legacy_lines)
     report_path = timestamped_output_path(output_path)
     write_excel_report(
         result,
@@ -110,7 +112,7 @@ def process_sftp_comparison(
     if not sftp:
         return 1
 
-    print(f"\n--- Processing Profile: {country} - {report_type} (X12 only) ---")
+    print(f"\n--- Processing Profile: {country} - {report_type} (X12 and EDIFACT) ---")
 
     try:
         if not compare_all:
@@ -156,9 +158,9 @@ def process_sftp_comparison(
             country,
             report_type,
         )
-        print("\n[SUCCESS] X12 comparison finished.")
+        print("\n[SUCCESS] EDI comparison finished.")
         print(f"  Files audited:             {len(audit_rows)}")
-        print(f"  X12 pairs compared:        {len(vendor_comparisons)}")
+        print(f"  EDI pairs compared:        {len(vendor_comparisons)}")
         print(f"  Excel report:              {report_path}")
         return 0
     finally:
@@ -225,7 +227,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--all",
         action="store_true",
-        help="Compare every matching X12 pair on SFTP instead of picking two files.",
+        help="Compare every matching X12 or EDIFACT pair on SFTP instead of picking two files.",
     )
     parser.add_argument(
         "--country",
@@ -300,7 +302,7 @@ def main(argv: list[str] | None = None, input_func=input) -> int:
     data_dir = repo_root / "data"
 
     print("=" * 45)
-    print("     EDI X12 SEGMENT COMPARISON")
+    print("  EDI X12 / EDIFACT SEGMENT COMPARISON")
     print("=" * 45)
 
     if args.all:
