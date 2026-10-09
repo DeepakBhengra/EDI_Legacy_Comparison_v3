@@ -103,9 +103,14 @@ def read_segment_lines(path: Path) -> list[str]:
 
 
 def load_local_segments(path: Path) -> list[str]:
-    """Load a local file as segments, splitting wrapped X12 when needed."""
+    """Load a local file as segments, splitting wrapped X12 or EDIFACT when needed."""
+    from edifact_format import parse_edifact_segments
+
     text = path.read_text(encoding="utf-8", errors="replace")
     lines = [line for line in text.splitlines() if line != ""]
-    if detect_edi_format(text) == "X12" and len(lines) <= 3:
+    edi_format = detect_edi_format(text)
+    if edi_format == "EDIFACT":
+        return parse_edifact_segments(text)
+    if edi_format == "X12" and len(lines) <= 3:
         return parse_x12_segments(text, extract_vendor_name(path.name))
     return lines

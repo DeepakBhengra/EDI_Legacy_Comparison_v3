@@ -87,7 +87,7 @@ def prompt_sftp_file(
     while True:
         selected = prompt_choice(f"\nSelect {label} file:", options, input_func=input_func)
         name, edi_format, path = lookup[selected]
-        if edi_format != "X12":
-            print(f"[Invalid Input] {name} is {edi_format}. Choose an X12 file.\n")
+        if edi_format not in {"X12", "EDIFACT"}:
+            print(f"[Invalid Input] {name} is {edi_format}. Choose an X12 or EDIFACT file.\n")
             continue
         return name, edi_format, path

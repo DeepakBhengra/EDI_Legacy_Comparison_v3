@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""SFTP connectivity and remote X12 file listing/download."""
+"""SFTP connectivity and remote X12 / EDIFACT file listing/download."""
 
 from __future__ import annotations
 
@@ -9,13 +9,15 @@ from dataclasses import dataclass
 from getpass import getpass
 
 from cli_prompts import prompt_sftp_file
-from edi846_compare import ComparisonResult, compare_segments
+from edi846_compare import ComparisonResult, compare_loaded_segments
 from x12_format import (
     clean_filename,
     detect_edi_format,
     extract_vendor_name,
     parse_x12_segments,
 )
+
+SUPPORTED_EDI_FORMATS = {"X12", "EDIFACT"}
 
 SFTP_HOST = os.environ.get("SFTP_HOST", "venus.ingrammicro.com")
 SFTP_PORT = int(os.environ.get("SFTP_PORT", "22"))
@@ -128,14 +130,28 @@ def read_file_header_safely(sftp, file_path: str) -> str:
         return "READ ERROR / UNKNOWN"
 
 
-def download_x12_segments(sftp, file_path: str, vendor_name: str) -> list[str]:
+def download_edi_segments(
+    sftp,
+    file_path: str,
+    vendor_name: str,
+    edi_format: str | None = None,
+) -> list[str]:
+    from edifact_format import parse_edifact_segments
+
     try:
         with sftp.open(file_path, "rb") as handle:
             raw_content = handle.read().decode("utf-8", errors="ignore")
+        resolved = edi_format or detect_edi_format(raw_content)
+        if resolved == "EDIFACT":
+            return parse_edifact_segments(raw_content)
         return parse_x12_segments(raw_content, vendor_name)
     except Exception as exc:
-        print(f"[ERROR] Failed to download X12 segments for {vendor_name}: {exc}")
+        print(f"[ERROR] Failed to download EDI segments for {vendor_name}: {exc}")
         return []
+
+
+def download_x12_segments(sftp, file_path: str, vendor_name: str) -> list[str]:
+    return download_edi_segments(sftp, file_path, vendor_name, edi_format="X12")
 
 
 def resolve_sftp_folder(sftp, country: str, report_type: str, side: str) -> tuple[list[str], str]:
@@ -196,10 +212,14 @@ def collect_file_pairs(
             action = "Missing in New GDL Folder"
         elif not in_legacy:
             action = "Missing in Legacy Folder"
-        elif gdl_format != "X12" or legacy_format != "X12":
-            action = "SKIPPED (X12 only)"
-        else:
+        elif (
+            gdl_format in SUPPORTED_EDI_FORMATS
+            and legacy_format in SUPPORTED_EDI_FORMATS
+            and gdl_format == legacy_format
+        ):
             action = "Compared"
+        else:
+            action = "SKIPPED (unsupported or mixed format)"
 
         rows.append(
             FileAuditRow(
@@ -225,10 +245,14 @@ def compare_x12_pairs(sftp, audit_rows: list[FileAuditRow]) -> list[VendorCompar
     for row in audit_rows:
         if row.action != "Compared":
             continue
-        print(f"[COMPARING] {row.vendor_name} ({row.display_name})")
-        gdl_segs = download_x12_segments(sftp, row.gdl_path, row.vendor_name)
-        legacy_segs = download_x12_segments(sftp, row.legacy_path, row.vendor_name)
-        result = compare_segments(gdl_segs, legacy_segs)
+        print(f"[COMPARING] {row.vendor_name} ({row.display_name}) [{row.gdl_format}]")
+        gdl_segs = download_edi_segments(
+            sftp, row.gdl_path, row.vendor_name, edi_format=row.gdl_format
+        )
+        legacy_segs = download_edi_segments(
+            sftp, row.legacy_path, row.vendor_name, edi_format=row.legacy_format
+        )
+        result = compare_loaded_segments(gdl_segs, legacy_segs)
         sheet_name = unique_sheet_name(row.vendor_name, used_sheets)
         comparisons.append(
             VendorComparison(
@@ -263,10 +287,10 @@ def load_sftp_selected_file(
         if match is None:
             raise FileNotFoundError(f"{label} file not found on SFTP: {filename}")
         name, edi_format, path = match
-        if edi_format != "X12":
-            raise ValueError(f"{label} file {name} is {edi_format}, not X12.")
+        if edi_format not in SUPPORTED_EDI_FORMATS:
+            raise ValueError(f"{label} file {name} is {edi_format}, not X12 or EDIFACT.")
     else:
         name, edi_format, path = prompt_sftp_file(label, entries, input_func=input_func)
     vendor = extract_vendor_name(name)
-    segments = download_x12_segments(sftp, path, vendor)
+    segments = download_edi_segments(sftp, path, vendor, edi_format=edi_format)
     return f"sftp:{path}", segments

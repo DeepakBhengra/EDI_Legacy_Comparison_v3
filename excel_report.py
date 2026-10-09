@@ -112,9 +112,9 @@ def _write_metrics_sheet(
     summary_rows = [
         ("GDL lines", result.gdl_line_count, formats["value"]),
         ("Legacy lines", result.legacy_line_count, formats["value"]),
-        ("GDL ST-SE blocks", result.gdl_block_count, formats["value"]),
-        ("Legacy ST-SE blocks", result.legacy_block_count, formats["value"]),
-        ("Paired warehouse blocks", result.paired_block_count, formats["value"]),
+        ("GDL blocks / items", result.gdl_block_count, formats["value"]),
+        ("Legacy blocks / items", result.legacy_block_count, formats["value"]),
+        ("Paired blocks / items", result.paired_block_count, formats["value"]),
         ("MATCH", result.matches, formats["value"]),
         ("MISMATCH", result.mismatches, formats["orange_value"]),
         ("Missing in Impulse", result.missing_in_impulse, formats["red_value"]),
@@ -269,7 +269,7 @@ def write_sftp_excel_report(
     overview.write(0, 8, "Legacy lines", formats["header"])
     overview.freeze_panes(1, 0)
     overview.write(1, 0, f"Profile {country} / {report_type}", formats["label"])
-    overview.write(1, 1, f"{len(vendor_comparisons)} X12 pair(s)", formats["value"])
+    overview.write(1, 1, f"{len(vendor_comparisons)} EDI pair(s)", formats["value"])
 
     for index, item in enumerate(vendor_comparisons, start=2):
         result = item.result
