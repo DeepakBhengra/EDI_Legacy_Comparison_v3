@@ -13,6 +13,9 @@ Each input can come from a **local file** or from the **SFTP server**. The comma
 | File | Role |
 | --- | --- |
 | `compare_segments.py` | CLI: local vs SFTP source selection, then run the compare |
+| `run_comparison.bat` | Windows one-click launcher (Desktop shortcut target) |
+| `install_desktop_shortcut.bat` | Creates **EDI Comparison** on the Windows Desktop |
+| `run_comparison.sh` | macOS / Linux launcher |
 | `edi846_compare.py` | GDL vs Legacy X12 846 comparison (N1 blocks, LIN/QTY) |
 | `edi867_compare.py` | GDL vs Legacy X12 867 POS comparison (PTD ship-to, QTY/LIN) |
 | `edifact_invrpt_compare.py` | GDL vs Legacy EDIFACT INVRPT comparison (LOC+SKU items, RFF/QTY) |
@@ -26,6 +29,42 @@ Each input can come from a **local file** or from the **SFTP server**. The comma
 | `docs/x12_867_pos_layout.md` | X12 867 POS segment layout |
 
 Format is detected from the file head (`ISA` vs `UNA`/`UNB`/`UNH`). Mixed X12 vs EDIFACT, or mixed 846 vs 867, pairs are not compared.
+
+---
+
+## Run from the Desktop (one click, Windows)
+
+You do **not** need to open VS Code after the files are on disk. The launcher creates `.venv` and installs packages the first time it runs.
+
+### Put a shortcut on the Desktop
+
+1. Open this project folder in File Explorer (the folder that contains `run_comparison.bat`).
+2. Double-click **`install_desktop_shortcut.bat`**.
+3. Click through the prompt. It creates **EDI Comparison.lnk** on your Desktop.
+4. Double-click **EDI Comparison** on the Desktop.
+
+A black command window opens, then the same prompts as `python compare_segments.py`:
+
+1. GDL input source — local file or SFTP  
+2. Legacy input source — local file or SFTP  
+3. Country (`MX` / `SG`) and report (`INV` / `POS`) if SFTP is used  
+4. The GDL file and the Legacy file  
+
+When it finishes, the window shows the Excel path under `reports\` and waits for a key press so you can read it.
+
+Leave `run_comparison.bat` in the project folder. The Desktop item is only a shortcut; do not copy the `.bat` to the Desktop by itself.
+
+### Other ways to start it
+
+- Double-click `run_comparison.bat` in the project folder.
+- Right-click `run_comparison.bat` → **Send to → Desktop (create shortcut)**.
+- For the bundled samples only, create a Desktop shortcut whose target is:
+
+  `C:\path\to\this\folder\run_comparison.bat --local`
+
+macOS / Linux: double-click or run `./run_comparison.sh` from the project folder (first time: `chmod +x run_comparison.sh`).
+
+Python 3.10+ must be installed and on PATH (Windows installer: tick **Add python.exe to PATH**). SFTP still needs a password in the window, or `SFTP_PASSWORD` already set in the environment.
 
 ---
 
