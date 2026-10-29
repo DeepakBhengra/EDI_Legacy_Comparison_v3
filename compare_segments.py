@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""CLI for GDL vs Legacy X12 846 and EDIFACT INVRPT comparison.
+"""CLI for GDL vs Legacy X12 846, X12 867 POS, and EDIFACT INVRPT comparison.
 
-X12 846 rules live in edi846_compare.py, EDIFACT INVRPT in
-edifact_invrpt_compare.py, splitting in x12_format.py / edifact_format.py,
-SFTP in sftp_client.py, and Excel output in excel_report.py.
+X12 846 rules live in edi846_compare.py, X12 867 POS in edi867_compare.py,
+EDIFACT INVRPT in edifact_invrpt_compare.py, splitting in x12_format.py /
+edifact_format.py, SFTP in sftp_client.py, and Excel output in excel_report.py.
 """
 
 from __future__ import annotations
@@ -302,7 +302,7 @@ def main(argv: list[str] | None = None, input_func=input) -> int:
     data_dir = repo_root / "data"
 
     print("=" * 45)
-    print("  EDI X12 / EDIFACT SEGMENT COMPARISON")
+    print("  EDI X12 846 / 867 / EDIFACT COMPARISON")
     print("=" * 45)
 
     if args.all:

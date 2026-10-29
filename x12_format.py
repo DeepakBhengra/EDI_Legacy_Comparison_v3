@@ -62,6 +62,52 @@ def segment_prefix(line: str) -> str:
     return line.split("~", 1)[0]
 
 
+def x12_parts(line: str) -> list[str]:
+    """Split a segment into tag + data elements, keeping the partner's separator."""
+    text = line.strip()
+    match = _SEGMENT_ID.match(text)
+    tag = match.group(1) if match else ""
+    rest = text[len(tag) :]
+    if not rest:
+        return [tag] if tag else []
+    separator = rest[0]
+    body = rest[1:]
+    if separator != "~" and body.endswith("~"):
+        body = body[:-1]
+    return [tag, *body.split(separator)]
+
+
+def x12_element(line: str, index: int) -> str:
+    """Return a 0-based data element after the segment tag (ST01, N101, …)."""
+    parts = x12_parts(line)
+    if index + 1 >= len(parts):
+        return ""
+    return parts[index + 1]
+
+
+def detect_x12_transaction(lines: list[str]) -> str:
+    """Return 846, 867, or empty when the transaction set cannot be read."""
+    gs_code = ""
+    for line in lines:
+        text = line.strip()
+        if not text:
+            continue
+        prefix = segment_prefix(text)
+        if prefix == "GS" and not gs_code:
+            gs_code = x12_element(text, 0)
+        elif prefix == "ST":
+            return x12_element(text, 0)
+        elif prefix == "BPT":
+            return "867"
+        elif prefix == "BIA":
+            return "846"
+    if gs_code == "PT":
+        return "867"
+    if gs_code == "IB":
+        return "846"
+    return ""
+
+
 def delimiters_from_isa(content: str) -> dict[str, str] | None:
     """Read X12 separators from the ISA envelope when the vendor is unknown."""
     compact = content.replace("\r", "")

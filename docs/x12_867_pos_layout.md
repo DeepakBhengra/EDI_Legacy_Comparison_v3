@@ -1,6 +1,7 @@
 # X12 867 POS layout (this file)
 
 Source: `data/POS_x12_1015.txt`  
+GDL vs Legacy compare: `edi867_compare.py` (PTD loops paired by ship-to `N1*ST`, items by `LIN`).  
 Transaction: **ANSI X12 867** Product Transfer and Resale Report (Point of Sale).  
 GS functional ID: `PT`. Version: `004010`.  
 Sender: Ingram Micro Mexico (`004919486MX`). Receiver: Samsung (`SEM950215S98`).

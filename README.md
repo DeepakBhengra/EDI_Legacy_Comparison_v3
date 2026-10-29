@@ -3,6 +3,7 @@
 Python tool that compares one GDL EDI file with one Legacy (Impulse / ECC) file and writes an Excel report. It supports:
 
 - **X12 846** inventory (ISA/GS, ST–SE warehouse blocks, LIN/QTY)
+- **X12 867** POS / resale (ISA/GS, PTD ship-to loops, QTY/LIN/UIT)
 - **EDIFACT INVRPT** inventory (UNB/UNZ, UNH–UNT, LIN/LOC/QTY)
 
 Each input can come from a **local file** or from the **SFTP server**.
@@ -13,6 +14,7 @@ Each input can come from a **local file** or from the **SFTP server**.
 | --- | --- |
 | `compare_segments.py` | CLI: local vs SFTP source selection, then run the compare |
 | `edi846_compare.py` | GDL vs Legacy X12 846 comparison (N1 blocks, LIN/QTY) |
+| `edi867_compare.py` | GDL vs Legacy X12 867 POS comparison (PTD ship-to, QTY/LIN) |
 | `edifact_invrpt_compare.py` | GDL vs Legacy EDIFACT INVRPT comparison (LOC+SKU items, RFF/QTY) |
 | `x12_format.py` | X12 format detection, vendor delimiters, segment splitting |
 | `edifact_format.py` | EDIFACT UNA delimiters and segment splitting |
@@ -35,6 +37,24 @@ Each input can come from a **local file** or from the **SFTP server**.
 | Legacy `LIN`/`QTY` has no GDL pair in that block | blank | Legacy `LIN`/`QTY` | `Missing in GDL` | red |
 
 `ST`–`SE` blocks with an `N1` warehouse line are paired by that `N1`. `LIN`/`QTY` pairs are matched by LIN content inside the paired block, even when the order differs.
+
+## X12 867 POS matching rules
+
+An 867 Point of Sale interchange is split into the ISA/GS envelope, one header (`BPT`, report `DTM`, distributor `N1*DS`), repeating `PTD*SD` loops, then `CTT`/`SE`.
+
+| Situation | GDL Segment | Legacy Segment | status | Row color |
+| --- | --- | --- | --- | --- |
+| `ISA` / `GS` / `ST` / `BPT` / `CTT` / `SE` equal | line | line | `MATCH` | none |
+| Those envelope or header lines differ | line | line | `MISMATCH` | orange |
+| `PTD` found by ship-to `N1*ST` | GDL PTD + parties + items | matching Legacy PTD | see below | |
+| Same SKU (`LIN`) inside that PTD; item order differs | GDL `QTY`/`LIN`/`UIT`/`PID`/`DTM` | matching Legacy item | `MATCH` | none |
+| `QTY` (or `UIT` / `PID` / item `DTM`) differs after `LIN` match | GDL line | Legacy line | `MISMATCH` | orange |
+| GDL ship-to or SKU has no Legacy pair | GDL segments | blank | `Missing in Impulse` | red |
+| Legacy ship-to or SKU has no GDL pair | blank | Legacy segments | `Missing in GDL` | red |
+
+`PTD` order does not matter. Item order inside a `PTD` does not matter. Mixed X12 846 vs 867 pairs are not compared.
+
+Sample POS dump: `data/POS_x12_1015.txt`. Segment layout: `docs/x12_867_pos_layout.md`.
 
 ## EDIFACT INVRPT matching rules
 
@@ -122,6 +142,7 @@ Both files local (X12 samples, or any two paths):
 python compare_segments.py --gdl path/to/gdl.txt --legacy path/to/legacy.txt
 python compare_segments.py --local
 python compare_segments.py --gdl data/EDIFACT_INVRPT_GDL.txt --legacy data/EDIFACT_INVRPT_GDL.txt
+python compare_segments.py --gdl data/POS_x12_1015.txt --legacy data/POS_x12_1015.txt
 ```
 
 Both files from SFTP:

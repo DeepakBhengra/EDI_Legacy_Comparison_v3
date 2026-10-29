@@ -317,8 +317,8 @@ def compare_loaded_segments(
     gdl_lines: Iterable[str],
     legacy_lines: Iterable[str],
 ) -> ComparisonResult:
-    """Dispatch GDL vs Legacy comparison for X12 846 or EDIFACT INVRPT."""
-    from x12_format import detect_edi_format
+    """Dispatch GDL vs Legacy comparison for X12 846, X12 867, or EDIFACT INVRPT."""
+    from x12_format import detect_edi_format, detect_x12_transaction
 
     gdl_list = list(gdl_lines)
     legacy_list = list(legacy_lines)
@@ -329,6 +329,25 @@ def compare_loaded_segments(
 
         return compare_edifact_invrpt(gdl_list, legacy_list)
     if gdl_fmt == "X12" and legacy_fmt == "X12":
+        gdl_txn = detect_x12_transaction(gdl_list)
+        legacy_txn = detect_x12_transaction(legacy_list)
+        if gdl_txn == "867" and legacy_txn == "867":
+            from edi867_compare import compare_pos_867
+
+            return compare_pos_867(gdl_list, legacy_list)
+        if gdl_txn and legacy_txn and gdl_txn != legacy_txn:
+            return ComparisonResult(
+                rows=[
+                    ReportRow(
+                        gdl_segment=f"Format: X12 {gdl_txn}",
+                        legacy_segment=f"Format: X12 {legacy_txn}",
+                        status=STATUS_MISMATCH,
+                        fill=FILL_ORANGE,
+                    )
+                ],
+                gdl_line_count=len(gdl_list),
+                legacy_line_count=len(legacy_list),
+            )
         return compare_segments(gdl_list, legacy_list)
     if gdl_fmt in {"EMPTY FILE", "UNKNOWN / UNSUPPORTED"} and legacy_fmt in {
         "EMPTY FILE",
